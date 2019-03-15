@@ -1,4 +1,4 @@
-APP = main
+APP = bopaint
 
 OBJECTS = main.o graph.o
 OUTPUTS = output/*
