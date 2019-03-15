@@ -37,7 +37,7 @@ clean:
 clean_object:
 	echo 'Cleaning objects ...'
 	-$(DEL) *.o
-	-$(DEL) $(APP_NAME)
+	-$(DEL) $(APP)
 
 clean_output:
 	echo 'Cleaning outputs ...'
