@@ -18,6 +18,8 @@ const double sampling_weigh[3][3] = {
 
 const double eps = 1e-6;
 const double pi = 3.14159265;
+const double caa_w = 0.4;
+const double laa_w = 0.45;
 
 inline void debug() {
     std:: cout << "DEBUG" << std:: endl;
@@ -57,15 +59,24 @@ void Graph:: readFromFile(std:: string path) {
     json config; input >> config;
     height = config["height"], width = config["width"];
     waaa = config["waaa"], elaa = config["elaa"];
+    height *= elaa, width *= elaa;
     for(auto line: config["lines"]) {
-        Point a = Point(line[0], line[1]);
-        Point b = Point(line[2], line[3]);
+        Point a = Point((int)(line[0]) * elaa, (int)(line[1]) * elaa);
+        Point b = Point((int)(line[2]) * elaa, (int)(line[3]) * elaa);
         lines.push_back(Line(a, b));
     }
     for(auto arc: config["arcs"]) {
-        Point center = Point(arc[0], arc[1]);
+        Point center = Point((int)(arc[0]) * elaa, (int)(arc[1]) * elaa);
         Range range = Range(arc[3], arc[4]);
-        arcs.push_back(Arc(center, arc[2], range));
+        arcs.push_back(Arc(center, (int)(arc[2]) * elaa, range));
+    }
+    for(auto polygon: config["polygon"]) {
+        bool fill = polygon["fill"];
+        std:: vector<Point> points;
+        for(int j = 0; j < polygon["points"].size() / 2; ++ j) {
+            points.push_back(Point((int)(polygon["points"][j * 2]) * elaa, (int)(polygon["points"][j * 2 + 1]) * elaa));
+        }
+        polygons.push_back(std:: make_pair(fill, points));
     }
     return;
 }
@@ -114,8 +125,8 @@ void Graph:: drawPixel(Point a, Color color, double gray) {
 
 void Graph:: weighedSamplingLine(double lk, double lb, Color color, Point a) {
     double gray = 0;
-    double ulb = lb + sqrt(1 + lk * lk) / 2.;
-    double dlb = lb - sqrt(1 + lk * lk) / 2.;
+    double ulb = lb + sqrt(1 + lk * lk) * laa_w;
+    double dlb = lb - sqrt(1 + lk * lk) * laa_w;
     for(int i = 0; i < 3; ++ i) {
         for(int j = 0; j < 3; ++ j) {
             double lux = a.x + i * 1 / 3., luy = a.y + (j + 1) * 1 / 3.;
@@ -134,7 +145,7 @@ void Graph:: weighedSamplingLine(double lk, double lb, Color color, Point a) {
 
 double Graph:: weighedSamplingCircle(int r, Point delta) {
     double gray = 0;
-    double lr = r - 0.3, rr = r + 0.3;
+    double lr = r - caa_w, rr = r + caa_w;
     for(int i = 0; i < 3; ++ i) {
         for(int j = 0; j < 3; ++ j) {
             bool flag = false;
@@ -235,6 +246,66 @@ void Graph:: drawCircle(Point center, int r, Range range, Color color) {
     return;
 }
 
+void Graph:: drawFilledPolygon(std:: vector<Point> &edges, Color color) {
+    std:: vector<int> scanner;
+    std:: vector<int> ymin(edges.size());
+    int ymax_val = -1, ymin_val = 0x7fffffff;
+    for(int i = 0; i < edges.size(); ++ i) {
+        ymin[i] = i;
+        ymax_val = std:: max(ymax_val, edges[i].y);
+        ymin_val = std:: min(ymin_val ,edges[i].y);
+    }
+    auto fp = [edges] (int i) -> Point { return edges[i]; };
+    auto sp = [edges] (int i) -> Point { return edges[(i + 1) % edges.size()]; };
+    auto gy = [fp, sp] (int i) -> int { return std:: min(fp(i).y, sp(i).y); };
+    auto my = [fp, sp] (int i) -> int { return std:: max(fp(i).y, sp(i).y); };
+    auto pushCross = [] (int y, std:: set<int> &cross, std:: set<int> line_beginner, Point a, Point b) {
+        if(a.y == b.y) {
+            line_beginner.insert(a.x);
+            cross.insert(a.x);
+            cross.insert(b.x);
+        } else {
+            int val = (int)(1.0 * (y - a.y) / (b.y - a.y) * (b.x - a.x)) + a.x;
+            cross.insert(val);
+        }
+    };
+    std:: sort(ymin.begin(), ymin.end(), [gy] (const int &a, const int &b) -> bool {
+        return gy(a) < gy(b);
+    });
+    /* Begin scanning */
+    int index = 0;
+    for(int i = ymin_val; i <= ymax_val; ++ i) {
+        while(index < ymin.size() && gy(ymin[index]) == i) {
+            scanner.push_back(ymin[index]);
+            index ++;
+        }
+        int xl = 0x7fffffff, xr = -1;
+        std:: set<int> cross, line_beginner;
+        cross.clear(), line_beginner.clear();
+        for(auto j: scanner) {
+            pushCross(i, cross, line_beginner, fp(j), sp(j));
+        }
+        bool draw = true;
+        std:: set<int>:: iterator it2 = cross.begin(); ++ it2;
+        for(std:: set<int>:: iterator it = cross.begin(); it != cross.end() && it2 != cross.end(); ++ it, ++ it2) {
+            if(line_beginner.find(*it) != line_beginner.end()) draw = true;
+            if(draw) {
+                for(int x = *it; x < *it2; ++ x) {
+                    drawPixel(Point(x, i), BLACK);
+                }
+            }
+            draw ^= 1;
+        }
+        for(int j = 0; j < scanner.size(); ++ j) {
+            if(my(scanner[j]) == i) {
+                scanner.erase(scanner.begin() + j);
+                j --;
+            }
+        }
+    }
+    return;
+}
+
 void Graph:: draw() {
     img = new cv:: Mat(height, width, CV_8UC3, cv:: Scalar(255, 255, 255));
     for(auto line: lines) {
@@ -242,6 +313,16 @@ void Graph:: draw() {
     }
     for(auto arc: arcs) {
         drawCircle(std:: get<0>(arc), std:: get<1>(arc), std:: get<2>(arc), BLACK);
+    }
+    for(auto polygon: polygons) {
+        if(polygon.first) {
+            drawFilledPolygon(polygon.second, BLACK);
+        } else {
+            std:: vector<Point> &points = polygon.second;
+            for(int i = 0; i < points.size(); ++ i) {
+                bresenhamLine(std:: make_pair(points[i], points[(i + 1) % points.size()]));
+            }
+        }
     }
     return;
 }

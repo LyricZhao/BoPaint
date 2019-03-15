@@ -35,6 +35,7 @@ struct Point {
 using Range = std:: pair<int, int>;
 using Arc = std:: tuple<Point, int, Range>;
 using Line = std:: pair<Point, Point>;
+using Polygon = std:: pair<bool, std:: vector<Point> >;
 
 typedef unsigned int Color;
 typedef unsigned char ColorBit;
@@ -55,6 +56,7 @@ private:
     bool waaa; int elaa;
     std:: vector<Arc> arcs;
     std:: vector<Line> lines;
+    std:: vector<Polygon> polygons;
 
     bool inRange(Point a);
     void lineAA(Point a, double lk, double lb, Color color);
@@ -66,4 +68,5 @@ private:
     void bresenhamLine(Line line);
     void circle8Point(Point a, Point center, int r, Range range, Color color);
     void drawCircle(Point center, int r, Range range, Color color);
+    void drawFilledPolygon(std:: vector<Point> &edges, Color color);
 };
