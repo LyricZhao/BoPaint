@@ -16,10 +16,10 @@ const double sampling_weigh[3][3] = {
     1 / 16., 2 / 16., 1 / 16.
 };
 
-const double eps = 1e-6;
+const double eps = 1e-8;
 const double pi = 3.14159265;
-const double caa_w = 0.4;
-const double laa_w = 0.45;
+const double caa_w = 0.5;
+const double laa_w = 0.5;
 
 inline void debug() {
     std:: cout << "DEBUG" << std:: endl;
@@ -100,23 +100,24 @@ bool Graph:: inRange(Point a) {
 void Graph:: drawPixel(Point a, Color color) {
     if(!inRange(a)) return;
     if(rev_xy) std:: swap(a.x, a.y);
-    img -> at<cv:: Vec3b>(a.x, a.y)[0] = (ColorBit) ((color & 0x00ff0000ul) >> 16); /* B */
-    img -> at<cv:: Vec3b>(a.x, a.y)[1] = (ColorBit) ((color & 0x0000ff00ul) >>  8); /* G */
-    img -> at<cv:: Vec3b>(a.x, a.y)[2] = (ColorBit) ((color & 0x000000fful) >>  0); /* R */
+    img -> at<cv:: Vec3b>(a.x, a.y)[0] &= (ColorBit) ((color & 0x00ff0000ul) >> 16); /* B */
+    img -> at<cv:: Vec3b>(a.x, a.y)[1] &= (ColorBit) ((color & 0x0000ff00ul) >>  8); /* G */
+    img -> at<cv:: Vec3b>(a.x, a.y)[2] &= (ColorBit) ((color & 0x000000fful) >>  0); /* R */
     return;
 }
 
 void Graph:: drawPixel(Point a, ColorBit b, ColorBit g, ColorBit r) {
     if(!inRange(a)) return;
     if(rev_xy) std:: swap(a.x, a.y);
-    img -> at<cv:: Vec3b>(a.x, a.y)[0] = b;
-    img -> at<cv:: Vec3b>(a.x, a.y)[1] = g;
-    img -> at<cv:: Vec3b>(a.x, a.y)[2] = r;
+    img -> at<cv:: Vec3b>(a.x, a.y)[0] &= b;
+    img -> at<cv:: Vec3b>(a.x, a.y)[1] &= g;
+    img -> at<cv:: Vec3b>(a.x, a.y)[2] &= r;
     return;
 }
 
 void Graph:: drawPixel(Point a, Color color, double gray) {
     if(gray < eps || !inRange(a)) return;
+    if(gray > 1) gray = 1;
     drawPixel(a, (ColorBit) ((255 - (255 - ((color & 0x00ff0000ul) >> 16)) * gray)),
                               (ColorBit) ((255 - (255 - ((color & 0x0000ff00ul) >>  8)) * gray)),
                               (ColorBit) ((255 - (255 - ((color & 0x000000fful) >>  0)) * gray)));
@@ -167,6 +168,8 @@ void Graph:: lineAA(Point a, double lk, double lb, Color color) {
     weighedSamplingLine(lk, lb, color, a);
     weighedSamplingLine(lk, lb, color, a - shift);
     weighedSamplingLine(lk, lb, color, a + shift);
+    weighedSamplingLine(lk, lb, color, a - shift - shift);
+    weighedSamplingLine(lk, lb, color, a + shift + shift);
     return;
 }
 
@@ -265,7 +268,7 @@ void Graph:: drawFilledPolygon(std:: vector<Point> &edges, Color color) {
             cross.insert(a.x);
             cross.insert(b.x);
         } else {
-            int val = (int)(1.0 * (y - a.y) / (b.y - a.y) * (b.x - a.x)) + a.x;
+            int val = (int)(1.0 * (y - a.y) / (b.y - a.y) * 1.0 * (b.x - a.x)) + a.x;
             cross.insert(val);
         }
     };
@@ -279,14 +282,14 @@ void Graph:: drawFilledPolygon(std:: vector<Point> &edges, Color color) {
             scanner.push_back(ymin[index]);
             index ++;
         }
-        int xl = 0x7fffffff, xr = -1;
         std:: set<int> cross, line_beginner;
         cross.clear(), line_beginner.clear();
         for(auto j: scanner) {
             pushCross(i, cross, line_beginner, fp(j), sp(j));
         }
         bool draw = true;
-        std:: set<int>:: iterator it2 = cross.begin(); ++ it2;
+        std:: set<int>:: iterator it2 = cross.begin();
+        if(it2 != cross.end()) ++ it2;
         for(std:: set<int>:: iterator it = cross.begin(); it != cross.end() && it2 != cross.end(); ++ it, ++ it2) {
             if(line_beginner.find(*it) != line_beginner.end()) draw = true;
             if(draw) {
@@ -315,13 +318,12 @@ void Graph:: draw() {
         drawCircle(std:: get<0>(arc), std:: get<1>(arc), std:: get<2>(arc), BLACK);
     }
     for(auto polygon: polygons) {
+        std:: vector<Point> &points = polygon.second;
+        for(int i = 0; i < points.size(); ++ i) {
+            bresenhamLine(std:: make_pair(points[i], points[(i + 1) % points.size()]));
+        }
         if(polygon.first) {
             drawFilledPolygon(polygon.second, BLACK);
-        } else {
-            std:: vector<Point> &points = polygon.second;
-            for(int i = 0; i < points.size(); ++ i) {
-                bresenhamLine(std:: make_pair(points[i], points[(i + 1) % points.size()]));
-            }
         }
     }
     return;
